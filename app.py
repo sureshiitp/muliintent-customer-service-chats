@@ -1,8 +1,8 @@
 import streamlit as st
 import joblib
 import numpy as np
-import tensorflow as tf
 import re
+import tflite_runtime.interpreter as tflite  # ✅ lightweight TFLite runtime
 
 st.set_page_config(page_title="Customer Intent Classifier", layout="centered")
 
@@ -17,44 +17,43 @@ def load_tfidf():
     return model, vectorizer, labels
 
 # =========================
-# ✅ 2) Load BiLSTM (TFLite)
+# ✅ 2) Load BiLSTM (TFLite model)
 # =========================
 @st.cache_resource
 def load_bilstm():
-    interpreter = tf.lite.Interpreter(model_path="models/bilstm_lite/bilstm_model.tflite")
+    interpreter = tflite.Interpreter(model_path="models/bilstm_lite/bilstm_model.tflite")
     interpreter.allocate_tensors()
-    
     input_details = interpreter.get_input_details()
     output_details = interpreter.get_output_details()
-    
+
     tokenizer = joblib.load("models/bilstm_lite/tokenizer.joblib")
     labels = joblib.load("models/bilstm_lite/labels.joblib")["classes"]
     return interpreter, tokenizer, labels, input_details, output_details
 
-# ✅ Tokenizing for BiLSTM
+# ✅ Text preprocessing for BiLSTM
 def preprocess_text(text, tokenizer, max_len=50):
     text = text.lower()
     text = re.sub(r"[^a-z0-9\s]", " ", text)
     seq = tokenizer.texts_to_sequences([text])
-    padded = tf.keras.preprocessing.sequence.pad_sequences(seq, maxlen=max_len, padding='post')
+    from tensorflow.keras.preprocessing.sequence import pad_sequences  # safe for preprocessing only
+    padded = pad_sequences(seq, maxlen=max_len, padding='post')
     return padded
 
 def predict_bilstm(interpreter, input_details, output_details, padded):
-    interpreter.set_tensor(input_details[0]['index'], padded.astype(np.int32))
+    interpreter.set_tensor(input_details[0]["index"], padded.astype(np.int32))
     interpreter.invoke()
-    output = interpreter.get_tensor(output_details[0]['index'])
+    output = interpreter.get_tensor(output_details[0]["index"])
     return output
 
 # =========================
-# 🎛 UI Section
+# 🎛 UI Layout
 # =========================
 st.title("🤖 Customer Intent Classifier")
 st.caption("Models: TF-IDF + Logistic Regression | BiLSTM (TFLite)")
 
-model_choice = st.radio("Choose Model:", 
-                        ["TF-IDF + Logistic Regression", "BiLSTM (TFLite)"])
+model_choice = st.radio("Choose a model:", ["TF-IDF + Logistic Regression", "BiLSTM (TFLite)"])
 
-user_input = st.text_area("Enter customer message:", placeholder="e.g., I want to cancel my order")
+user_input = st.text_area("Enter a customer message:", placeholder="e.g., I want to cancel my order")
 
 if st.button("Predict"):
     if not user_input.strip():
@@ -63,10 +62,11 @@ if st.button("Predict"):
         try:
             if model_choice == "TF-IDF + Logistic Regression":
                 model, vectorizer, labels = load_tfidf()
-                pred = model.predict(vectorizer.transform([user_input]))[0]
+                X = vectorizer.transform([user_input])
+                pred = model.predict(X)[0]
                 st.success(f"✅ Predicted Intent: **{pred}**")
-            
-            elif model_choice == "BiLSTM (TFLite)":
+
+            else:
                 interpreter, tokenizer, labels, input_details, output_details = load_bilstm()
                 padded = preprocess_text(user_input, tokenizer)
                 probs = predict_bilstm(interpreter, input_details, output_details, padded)
@@ -75,4 +75,5 @@ if st.button("Predict"):
 
         except Exception as e:
             st.error(f"❌ Error: {e}")
+
 
