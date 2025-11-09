@@ -3,6 +3,6 @@ scikit-learn
 pandas
 numpy
 joblib
-tflite-runtime==2.11.0
+
 
 
