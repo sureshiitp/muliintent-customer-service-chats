@@ -1,32 +1,47 @@
 import streamlit as st
 import joblib
 import numpy as np
+import tensorflow as tf
 
-# Page settings
+# ------------------ PAGE SETTINGS ------------------
 st.set_page_config(page_title="Customer Intent Classifier", layout="centered")
 
-# Load TF-IDF model and vectorizer
+st.title("🤖 Customer Intent Classifier")
+st.write("Select a model and enter a customer message to predict intent.")
+
+# ------------------ LOAD MODELS ------------------
 @st.cache_resource
 def load_tfidf_model():
     model = joblib.load("tfidf_model.joblib")
     vectorizer = joblib.load("tfidf_vectorizer.joblib")
     return model, vectorizer
 
-model, vectorizer = load_tfidf_model()
+@st.cache_resource
+def load_bilstm_model():
+    model = tf.keras.models.load_model("bilstm_model.keras", compile=False)
+    tokenizer = joblib.load("tokenizer.joblib")
+    label_data = joblib.load("labels.joblib")["classes"]
+    return model, tokenizer, label_data
 
-st.title("🤖 Customer Intent Classifier (TF-IDF + Logistic Regression)")
-st.write("Type a customer message below to detect the intent.")
+# ------------------ USER SELECTION ------------------
+model_choice = st.radio("Choose a model:", ["TF-IDF + Logistic Regression", "BiLSTM + Attention"])
 
-# Input box
 user_input = st.text_input("💬 Enter customer query:")
 
-if st.button("Predict Intent"):
-    if user_input:
-        X = vectorizer.transform([user_input])
-        prediction = model.predict(X)[0]
-        st.success(f"✅ Predicted Intent: **{prediction}**")
-    else:
-        st.warning("Please enter a message to classify.")
+if st.button("Predict") and user_input:
+
+    if model_choice == "TF-IDF + Logistic Regression":
+        model, vectorizer = load_tfidf_model()
+        features = vectorizer.transform([user_input])
+        prediction = model.predict(features)[0]
+        st.success(f"✨ Predicted Intent (TF-IDF): **{prediction}**")
+
+    elif model_choice == "BiLSTM + Attention":
+        model, tokenizer, labels = load_bilstm_model()
+        seq = tokenizer.texts_to_sequences([user_input])
+        padded = tf.keras.preprocessing.sequence.pad_sequences(seq, maxlen=40)
+        pred = np.argmax(model.predict(padded), axis=1)[0]
+        st.success(f"✨ Predicted Intent (BiLSTM): **{labels[pred]}**")
 
 
 
